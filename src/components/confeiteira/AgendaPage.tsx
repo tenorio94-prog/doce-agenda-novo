@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAgenda } from "@/hooks/useAgenda";
+import { useRepository } from "@/repositories";
 import { TopBar } from "./TopBar";
 import { BottomBar } from "./BottomBar";
 import { PendingBanner } from "./PendingBanner";
@@ -9,23 +10,38 @@ import { AgendaCard } from "./AgendaCard";
 import { OrderDrawer } from "./OrderDrawer";
 import { CapacityDialog } from "./CapacityDialog";
 import type { Order } from "@/repositories/types";
-import type { OrderStatus } from "@/domain/orderStatus";
 
 export function AgendaPage({ basePath }: { basePath: "/app" | "/demo" }) {
   const {
+    profile,
     dayOrders,
     loading,
-    pendingId,
     error,
     capacityError,
-    confirmOrder,
     advanceStatus,
     markPaymentReceived,
     clearCapacityError,
   } = useAgenda();
 
+  const repository = useRepository();
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    if (!profile) return;
+    let cancelled = false;
+    repository.submissions
+      .listByProfile(profile.id)
+      .then((subs) => {
+        if (cancelled) return;
+        setPendingCount(subs.filter((s) => s.status === "pendente").length);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [repository, profile]);
 
   const handleSelect = (order: Order) => {
     setSelectedOrder(order);
@@ -33,7 +49,7 @@ export function AgendaPage({ basePath }: { basePath: "/app" | "/demo" }) {
   };
 
   const handleAdvance = async (orderId: string, next: string) => {
-    await advanceStatus(orderId, next as OrderStatus);
+    await advanceStatus(orderId, next as Order["status"] & string);
     setDrawerOpen(false);
   };
 
@@ -41,10 +57,7 @@ export function AgendaPage({ basePath }: { basePath: "/app" | "/demo" }) {
     await markPaymentReceived(orderId);
   };
 
-  const handleAcceptCapacity = async (reason: string) => {
-    if (pendingId) {
-      await confirmOrder(pendingId, reason);
-    }
+  const handleAcceptCapacity = async () => {
     clearCapacityError();
   };
 
@@ -53,7 +66,7 @@ export function AgendaPage({ basePath }: { basePath: "/app" | "/demo" }) {
       <TopBar title="Agenda" onShareLink={() => {}} />
       <main className="max-w-[428px] mx-auto px-4 pt-20 pb-28">
         {error && <p className="text-error font-body-sm mb-3">{error.message}</p>}
-        <PendingBanner count={pendingId ? 1 : 0} onView={() => {}} />
+        <PendingBanner count={pendingCount} onView={() => {}} />
         <div className="flex flex-col gap-3 mt-3">
           {loading && <p className="font-body-sm text-body-sm text-on-surface-variant">Carregando...</p>}
           {dayOrders.map((order) => (
